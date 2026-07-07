@@ -38,8 +38,13 @@ python garmin_daily_pull.py --days 30  # backfill 30 days
 python garmin_daily_pull.py --dry-run  # pull + print, write nothing
 ```
 
-Then schedule `python garmin_daily_pull.py` once a day (cron, Task Scheduler, a $5 VPS —
-anything). Because it writes daily, a free Supabase project also stays warm and won't auto-pause.
+Then schedule `python garmin_daily_pull.py` once a day. Simplest is your computer's
+**Task Scheduler / cron**; for an always-on version (and to deliver a morning coach)
+import the ready-made workflow in [`n8n/garmin-coach.workflow.json`](n8n/garmin-coach.workflow.json).
+Because it writes daily, a free Supabase project also stays warm and won't auto-pause.
+
+Once the data's landing, the payoff is asking it questions — grab the 18 copy-paste
+coaching prompts in [`PROMPTS.md`](PROMPTS.md).
 
 ---
 
@@ -65,6 +70,8 @@ A few things worth knowing:
 | `garmin_daily_pull.py` | the pull (login, pull, upsert; `--login` / `--days N` / `--dry-run`) |
 | `schema.sql` | the six tables the pull writes to |
 | `.env.example` | the four env vars you need |
+| `PROMPTS.md` | the 18-prompt coaching pack — the payoff |
+| `n8n/garmin-coach.workflow.json` | importable n8n workflow: daily pull + morning coach (secrets-free template) |
 
 ---
 
@@ -72,6 +79,8 @@ A few things worth knowing:
 
 The point of getting the data out is to ask it questions. Once it's in one place, Claude reads
 it and coaches off it — session breakdowns, overtraining checks, body-comp reads, week-vs-month
-trends, a morning plan that adjusts to your recovery. The pull is step one; the prompts are the payoff.
+trends, a morning plan that adjusts to your recovery. The pull is step one; the prompts are the
+payoff → **[`PROMPTS.md`](PROMPTS.md)** (18 of them). For the hands-off morning coach, import
+**[`n8n/garmin-coach.workflow.json`](n8n/garmin-coach.workflow.json)**.
 
 Built by [aaronautomates](https://github.com/aaronparton2-sketch). MIT — do what you like with it.
