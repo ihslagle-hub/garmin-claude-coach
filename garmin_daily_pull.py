@@ -34,14 +34,24 @@ Notes
   - The first login may ask for an MFA code. After that the cached token is reused
     headless, so the daily schedule needs no interaction.
 """
-import os, sys, argparse, datetime, json, traceback
+import os, sys, argparse, datetime, json, time, traceback
 
 TOKENSTORE = os.path.expanduser(os.environ.get("GARMIN_TOKENSTORE", "~/.garminconnect"))
+STAMP = os.path.join(TOKENSTORE, ".last_success")   # wall-clock of the last good write (for --since-hours)
 
 
 # ----------------------------------------------------------------------------- auth
 def _mfa_prompt():
     return input("Garmin MFA code (check your email/authenticator): ").strip()
+
+
+def _tune_timeout(g, seconds=30):
+    """Give slow Garmin endpoints more room before timing out (best-effort, version-safe)."""
+    try:
+        g.garth.timeout = max(getattr(g.garth, "timeout", 0) or 0, seconds)
+    except Exception:
+        pass
+    return g
 
 
 def connect(force_login=False):
@@ -51,7 +61,7 @@ def connect(force_login=False):
         try:
             g = Garmin()
             g.login(TOKENSTORE)            # resume from cached token (loads from path)
-            return g
+            return _tune_timeout(g)
         except Exception:
             pass                            # fall through to full login
     email = os.environ.get("GARMIN_EMAIL")
@@ -62,7 +72,22 @@ def connect(force_login=False):
     g = Garmin(email=email, password=password, prompt_mfa=_mfa_prompt)
     g.login(TOKENSTORE)                     # fresh login; garminconnect persists the token to TOKENSTORE
     print(f"[auth] logged in + token cached to {TOKENSTORE}")
-    return g
+    return _tune_timeout(g)
+
+
+def connect_with_retry(force_login=False, attempts=3):
+    """connect(), but ride out a transient network blip on the initial login."""
+    for n in range(1, attempts + 1):
+        try:
+            return connect(force_login=force_login)
+        except SystemExit:
+            raise                           # missing creds etc. - don't retry
+        except Exception as e:
+            if n == attempts:
+                raise
+            wait = n * 3
+            print(f"[retry] login/connect failed (attempt {n}/{attempts}): {e} - retrying in {wait}s")
+            time.sleep(wait)
 
 
 # ----------------------------------------------------------------------------- helpers
@@ -84,9 +109,32 @@ def _i(x):
 
 def _ms_to_iso(ms):
     try:
-        return datetime.datetime.utcfromtimestamp(ms / 1000).isoformat() + "Z"
+        # timezone-aware UTC (utcfromtimestamp is deprecated); strip tz so the
+        # stored string stays the exact same "...Z" format the DB already holds.
+        dt = datetime.datetime.fromtimestamp(ms / 1000, datetime.timezone.utc)
+        return dt.replace(tzinfo=None).isoformat() + "Z"
     except (TypeError, ValueError, OSError):
         return None
+
+
+def _recent_success(hours):
+    """True if a successful write finished < `hours` ago (so we can skip a re-pull)."""
+    if not hours or hours <= 0:
+        return False
+    try:
+        age_h = (time.time() - float(open(STAMP).read().strip())) / 3600
+        return age_h < hours
+    except Exception:
+        return False
+
+
+def _mark_success():
+    try:
+        os.makedirs(TOKENSTORE, exist_ok=True)
+        with open(STAMP, "w") as f:
+            f.write(str(time.time()))
+    except Exception:
+        pass
 
 
 def daterange(days):
@@ -231,6 +279,9 @@ def main():
     ap.add_argument("--login", action="store_true", help="force interactive login (handles MFA) + cache token")
     ap.add_argument("--days", type=int, default=2, help="days back to pull (default 2)")
     ap.add_argument("--dry-run", action="store_true", help="pull + print summary, do not write to Supabase")
+    ap.add_argument("--since-hours", type=float, default=0,
+                    help="skip the pull if a successful one finished within this many hours "
+                         "(lets you trigger on every startup without re-hitting Garmin; default 0 = always run)")
     args = ap.parse_args()
 
     # load .env if present (no dependency required) - works standalone or inside a monorepo
@@ -245,7 +296,11 @@ def main():
                     os.environ.setdefault(k, v.strip())
             break
 
-    g = connect(force_login=args.login)
+    if not args.login and not args.dry_run and _recent_success(args.since_hours):
+        print(f"[skip] a successful pull finished less than {args.since_hours:g}h ago - data is fresh, nothing to do.")
+        return
+
+    g = connect_with_retry(force_login=args.login)
     if args.login:
         who = _safe(g.get_full_name, label="get_full_name") if hasattr(g, "get_full_name") else None
         print(f"[auth] ready{(' as ' + who) if who else ''}. Token cached - daily pulls run headless now.")
@@ -270,6 +325,7 @@ def main():
             upsert(k, rows)
         except Exception as e:
             print(f"  [error] {k}: {e}")
+    _mark_success()   # stamp so --since-hours can skip a redundant re-pull on the next startup
     print("[done]")
 
 
