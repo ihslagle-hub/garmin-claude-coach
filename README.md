@@ -84,3 +84,7 @@ payoff → **[`PROMPTS.md`](PROMPTS.md)** (18 of them). For the hands-off mornin
 **[`n8n/garmin-coach.workflow.json`](n8n/garmin-coach.workflow.json)**.
 
 Built by [aaronautomates](https://github.com/aaronparton2-sketch). MIT — do what you like with it.
+
+---
+
+**Built by [Mycelium AI](https://www.myceliumai.com.au)**, a Perth agency that builds websites, runs Google and Meta ads, and automates the admin for small businesses. Follow the builds on Instagram at [@aaronautomates](https://www.instagram.com/aaronautomates/).
