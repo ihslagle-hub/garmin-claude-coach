@@ -1,0 +1,27 @@
+name: Garmin daily pull
+
+on:
+  schedule:
+    - cron: "0 12 * * *"
+  workflow_dispatch:
+
+jobs:
+  pull:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install libraries
+        run: pip install garminconnect==0.3.17 requests
+      - name: Restore Garmin login token
+        env:
+          GARMIN_TOKENS: ${{ secrets.GARMIN_TOKENS }}
+        run: echo "$GARMIN_TOKENS" | base64 -d | tar xz -C ~
+      - name: Run the pull
+        env:
+          GARMIN_SUPABASE_URL: ${{ secrets.GARMIN_SUPABASE_URL }}
+          GARMIN_SUPABASE_SERVICE_KEY: ${{ secrets.GARMIN_SUPABASE_SERVICE_KEY }}
+        run: python garmin_daily_pull.py --days 3
