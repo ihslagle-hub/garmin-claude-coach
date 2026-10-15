@@ -17,11 +17,40 @@ jobs:
       - name: Install libraries
         run: pip install garminconnect==0.3.17 requests
       - name: Restore Garmin login token
+        id: seed
         env:
           GARMIN_TOKENS: ${{ secrets.GARMIN_TOKENS }}
-        run: echo "$GARMIN_TOKENS" | base64 -d | tar xz -C ~
+        run: |
+          echo "$GARMIN_TOKENS" | base64 -d | tar xz -C ~
+          echo "ver=$(echo "$GARMIN_TOKENS" | sha256sum | cut -c1-12)" >> "$GITHUB_OUTPUT"
+      - name: Restore newer token from cache
+        uses: actions/cache/restore@v4
+        with:
+          path: ~/.garminconnect
+          key: garmin-tokens-${{ steps.seed.outputs.ver }}-none
+          restore-keys: |
+            garmin-tokens-${{ steps.seed.outputs.ver }}-
+      - name: Token check
+        continue-on-error: true
+        run: |
+          python - <<'PY'
+          import os
+          from garminconnect import Garmin
+          try:
+              Garmin().login(os.path.expanduser("~/.garminconnect"))
+              print("token ok")
+          except Exception as e:
+              print("token check failed:", type(e).__name__)
+          PY
       - name: Run the pull
+        shell: bash
         env:
           GARMIN_SUPABASE_URL: ${{ secrets.GARMIN_SUPABASE_URL }}
           GARMIN_SUPABASE_SERVICE_KEY: ${{ secrets.GARMIN_SUPABASE_SERVICE_KEY }}
-        run: python garmin_daily_pull.py --days 3
+        run: python garmin_daily_pull.py --days 3 2>&1 | grep -v "latest weigh-in"
+      - name: Save refreshed token
+        if: success()
+        uses: actions/cache/save@v4
+        with:
+          path: ~/.garminconnect
+          key: garmin-tokens-${{ steps.seed.outputs.ver }}-${{ github.run_id }}
