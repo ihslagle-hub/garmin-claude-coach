@@ -1,0 +1,42 @@
+name: Garmin history backfill
+
+on:
+  workflow_dispatch:
+    inputs:
+      start:
+        description: "Start date (YYYY-MM-DD)"
+        default: "2023-08-01"
+      end:
+        description: "End date (YYYY-MM-DD)"
+        default: "2024-03-17"
+
+jobs:
+  backfill:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install libraries
+        run: pip install garminconnect==0.3.17 requests
+      - name: Restore Garmin login token
+        id: seed
+        env:
+          GARMIN_TOKENS: ${{ secrets.GARMIN_TOKENS }}
+        run: |
+          echo "$GARMIN_TOKENS" | base64 -d | tar xz -C ~
+          echo "ver=$(echo "$GARMIN_TOKENS" | sha256sum | cut -c1-12)" >> "$GITHUB_OUTPUT"
+      - name: Restore newer token from cache
+        uses: actions/cache/restore@v4
+        with:
+          path: ~/.garminconnect
+          key: garmin-tokens-${{ steps.seed.outputs.ver }}-none
+          restore-keys: |
+            garmin-tokens-${{ steps.seed.outputs.ver }}-
+      - name: Run the backfill
+        env:
+          GARMIN_SUPABASE_URL: ${{ secrets.GARMIN_SUPABASE_URL }}
+          GARMIN_SUPABASE_SERVICE_KEY: ${{ secrets.GARMIN_SUPABASE_SERVICE_KEY }}
+        run: python backfill_range.py --start "${{ inputs.start }}" --end "${{ inputs.end }}"
