@@ -8,7 +8,7 @@ on:
 jobs:
   pull:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -48,6 +48,12 @@ jobs:
           GARMIN_SUPABASE_URL: ${{ secrets.GARMIN_SUPABASE_URL }}
           GARMIN_SUPABASE_SERVICE_KEY: ${{ secrets.GARMIN_SUPABASE_SERVICE_KEY }}
         run: python garmin_daily_pull.py --days 3 2>&1 | grep -v "latest weigh-in"
+      - name: Refresh VO2 max and race predictions
+        continue-on-error: true
+        env:
+          GARMIN_SUPABASE_URL: ${{ secrets.GARMIN_SUPABASE_URL }}
+          GARMIN_SUPABASE_SERVICE_KEY: ${{ secrets.GARMIN_SUPABASE_SERVICE_KEY }}
+        run: python backfill_range.py --start "$(date -u -d '7 days ago' +%F)" --end "$(date -u +%F)"
       - name: Save refreshed token
         if: success()
         uses: actions/cache/save@v4
